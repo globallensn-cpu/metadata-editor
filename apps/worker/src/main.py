@@ -1,7 +1,10 @@
 """Reaboard Worker Daemon Entrypoint."""
 
-import sys
 import logging
+
+from arq import run_worker
+
+from apps.worker.src.runner import WorkerSettings
 
 logging.basicConfig(
     level=logging.INFO,
@@ -12,9 +15,8 @@ logger = logging.getLogger("reaboard.worker.daemon")
 
 
 def main() -> None:
-    logger.info("Initializing Reaboard sandboxed worker daemon...")
-    # In container, invokes `arq apps.worker.src.runner.WorkerSettings`
-    print("Reaboard worker initialized in single-job isolation mode.")
+    logger.info("Initializing Reaboard ARQ sandboxed worker daemon...")
+    run_worker(WorkerSettings)
 
 
 if __name__ == "__main__":
