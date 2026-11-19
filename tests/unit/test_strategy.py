@@ -1,6 +1,7 @@
 """Unit tests for Strategy Selection."""
 
 import pytest
+
 from apps.api.src.schemas.schemas import CleaningMethod, RemovalOptions
 from apps.worker.src.engine.strategy import (
     StrategySelectionError,

@@ -1,6 +1,7 @@
 """Reaboard Storage Backend Protocol and Local Ephemeral Implementation.
 
 Safely handles chunked file streaming, hash calculation, quota checks, and disk unlinking.
+Strictly isolates job directories using Path.is_relative_to and UUID validation.
 """
 
 from __future__ import annotations
@@ -8,12 +9,19 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import tempfile
+import uuid
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Generator
 from pathlib import Path
 
 
-DEFAULT_MAX_UPLOAD_BYTES = 500 * 1024 * 1024  # 500 MB
+def get_default_storage_dir() -> Path:
+    """Determine root storage directory from environment or OS temporary directory."""
+    env_dir = os.environ.get("REABOARD_STORAGE_DIR")
+    if env_dir:
+        return Path(env_dir).resolve()
+    return Path(tempfile.gettempdir()).resolve() / "reaboard"
 
 
 class StorageBackend(ABC):
@@ -22,21 +30,6 @@ class StorageBackend(ABC):
     @abstractmethod
     def get_job_dir(self, job_id: str) -> Path:
         """Return the root path for a job's ephemeral files."""
-        ...
-
-    @abstractmethod
-    def save_stream(
-        self,
-        job_id: str,
-        filename: str,
-        stream: Generator[bytes, None, None],
-        max_bytes: int = DEFAULT_MAX_UPLOAD_BYTES,
-    ) -> tuple[Path, int, str]:
-        """Save a synchronous chunk stream to disk.
-        
-        Returns:
-            (file_path, total_bytes_written, sha256_hex)
-        """
         ...
 
     @abstractmethod
@@ -51,37 +44,33 @@ class StorageBackend(ABC):
 
 
 class LocalStorageBackend(StorageBackend):
-    """Local ephemeral directory storage (tmpfs or disk)."""
+    """Local ephemeral directory storage with strict path isolation."""
 
     def __init__(self, base_dir: str | Path | None = None) -> None:
         if base_dir is None:
-            # Default to system temp /reaboard or environment override
-            env_dir = os.environ.get("REABOARD_STORAGE_DIR")
-            if env_dir:
-                self.base_dir = Path(env_dir).resolve()
-            else:
-                self.base_dir = Path("/tmp/reaboard").resolve() if os.name != "nt" else Path("D:/code metadata/.reaboard_storage").resolve()
+            self.base_dir = get_default_storage_dir()
         else:
             self.base_dir = Path(base_dir).resolve()
 
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     def _safe_resolve(self, job_id: str, filename: str | None = None) -> Path:
-        """Resolve path ensuring it does not escape base_dir."""
-        # Clean job_id (must be alphanumeric or dashes / UUID)
-        clean_id = "".join(c for c in job_id if c.isalnum() or c == "-")
-        if not clean_id:
-            raise ValueError(f"Invalid job ID: {job_id}")
+        """Resolve path ensuring job_id is valid UUID and target does not escape base_dir."""
+        # Strictly validate UUID format
+        try:
+            val = uuid.UUID(str(job_id))
+            clean_id = str(val)
+        except (ValueError, AttributeError, TypeError):
+            raise ValueError(f"Invalid job ID format: '{job_id}'. Must be a valid UUID.")
 
         job_dir = (self.base_dir / clean_id).resolve()
-        if not str(job_dir).startswith(str(self.base_dir)):
+        if not job_dir.is_relative_to(self.base_dir):
             raise ValueError("Path traversal detected in job directory resolution")
 
         if filename:
-            # Filename should be internal sanitized name like in.mp4, out.mp4
             clean_name = Path(filename).name
             target = (job_dir / clean_name).resolve()
-            if not str(target).startswith(str(job_dir)):
+            if not target.is_relative_to(job_dir):
                 raise ValueError("Path traversal detected in file resolution")
             return target
 
@@ -97,7 +86,7 @@ class LocalStorageBackend(StorageBackend):
         job_id: str,
         filename: str,
         stream: Generator[bytes, None, None],
-        max_bytes: int = DEFAULT_MAX_UPLOAD_BYTES,
+        max_bytes: int = 500 * 1024 * 1024,
     ) -> tuple[Path, int, str]:
         job_dir = self.get_job_dir(job_id)
         target_path = self._safe_resolve(job_id, filename)
@@ -111,10 +100,9 @@ class LocalStorageBackend(StorageBackend):
                     continue
                 bytes_written += len(chunk)
                 if bytes_written > max_bytes:
-                    # Clean up partial write before raising
                     f.close()
-                    if target_path.exists():
-                        target_path.unlink()
+                    target_path.unlink(missing_ok=True)
+                    shutil.rmtree(job_dir, ignore_errors=True)
                     raise ValueError(f"File size exceeds maximum allowed limit of {max_bytes} bytes")
                 sha256.update(chunk)
                 f.write(chunk)
@@ -126,7 +114,7 @@ class LocalStorageBackend(StorageBackend):
         job_id: str,
         filename: str,
         stream: AsyncIterator[bytes],
-        max_bytes: int = DEFAULT_MAX_UPLOAD_BYTES,
+        max_bytes: int = 500 * 1024 * 1024,
     ) -> tuple[Path, int, str]:
         """Asynchronous stream writer for FastAPI UploadFile."""
         job_dir = self.get_job_dir(job_id)
@@ -142,8 +130,8 @@ class LocalStorageBackend(StorageBackend):
                 bytes_written += len(chunk)
                 if bytes_written > max_bytes:
                     f.close()
-                    if target_path.exists():
-                        target_path.unlink()
+                    target_path.unlink(missing_ok=True)
+                    shutil.rmtree(job_dir, ignore_errors=True)
                     raise ValueError(f"File size exceeds maximum allowed limit of {max_bytes} bytes")
                 sha256.update(chunk)
                 f.write(chunk)
@@ -151,7 +139,11 @@ class LocalStorageBackend(StorageBackend):
         return target_path, bytes_written, sha256.hexdigest()
 
     def delete_job(self, job_id: str) -> bool:
-        job_dir = self._safe_resolve(job_id)
+        try:
+            job_dir = self._safe_resolve(job_id)
+        except ValueError:
+            return False
+
         if job_dir.exists():
             shutil.rmtree(job_dir, ignore_errors=True)
             return True

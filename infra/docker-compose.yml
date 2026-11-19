@@ -6,9 +6,13 @@ services:
     ports:
       - "3000:3000"
     environment:
+      - API_INTERNAL_URL=http://api:8000
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+    networks:
+      - frontend_net
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     restart: unless-stopped
 
   api:
@@ -18,13 +22,26 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - REABOARD_ENV=prod
       - REABOARD_STORAGE_DIR=/tmp/reaboard
-      - REABOARD_SECRET_KEY=reaboard-production-super-secret-key-1984
+      - REABOARD_SECRET_KEY=${REABOARD_SECRET_KEY:-reaboard-production-super-secret-key-1984-at-least-32-bytes}
       - REDIS_URL=redis://redis:6379/0
+      - REABOARD_MAX_UPLOAD_MB=500
+      - REABOARD_RETENTION_MINUTES=60
+      - REABOARD_RATE_LIMIT_UPLOADS_PER_HOUR=30
     volumes:
-      - ephemeral_storage:/tmp/reaboard
+      - ephemeral_storage:/tmp/reaboard:rw
+    networks:
+      - frontend_net
+      - backend_internal
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   worker:
@@ -37,9 +54,10 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    network_mode: none
     environment:
+      - REABOARD_ENV=prod
       - REABOARD_STORAGE_DIR=/tmp/reaboard
+      - REDIS_URL=redis://redis:6379/0
     volumes:
       - ephemeral_storage:/tmp/reaboard:rw
     tmpfs:
@@ -47,17 +65,35 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2.0'
+          cpus: "2.0"
           memory: 1024M
+    networks:
+      - backend_internal
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     restart: unless-stopped
+    networks:
+      - backend_internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+networks:
+  frontend_net:
+  backend_internal:
+    internal: true
 
 volumes:
   ephemeral_storage:

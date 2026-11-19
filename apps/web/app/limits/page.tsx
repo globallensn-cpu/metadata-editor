@@ -1,7 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { ArrowLeft, ShieldAlert } from "lucide-react";
-import { LimitsNotice } from "@/components/LimitsNotice";
+import { LimitsNotice } from "../../components/LimitsNotice";
 
 export default function LimitsPage() {
   return (

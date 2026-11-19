@@ -1,8 +1,8 @@
 import React from "react";
-import { DropZone } from "@/components/DropZone";
-import { LimitsNotice } from "@/components/LimitsNotice";
+import { DropZone } from "../components/DropZone";
+import { LimitsNotice } from "../components/LimitsNotice";
 import { ShieldCheck, Zap, Eye, Lock } from "lucide-react";
-import dict from "@/messages/en.json";
+import dict from "../messages/en.json";
 
 export default function HomePage() {
   return (

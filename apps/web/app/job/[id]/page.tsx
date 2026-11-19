@@ -3,12 +3,13 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ProgressStepper } from "@/components/ProgressStepper";
-import { MetadataViewer } from "@/components/MetadataViewer";
-import { RemovalSummaryCard } from "@/components/RemovalSummaryCard";
-import { DiffView } from "@/components/DiffView";
-import { SurvivorsList } from "@/components/SurvivorsList";
-import { LimitsNotice } from "@/components/LimitsNotice";
+import { ProgressStepper } from "../../../components/ProgressStepper";
+import { MetadataViewer } from "../../../components/MetadataViewer";
+import { RemovalSummaryCard } from "../../../components/RemovalSummaryCard";
+import { DiffView } from "../../../components/DiffView";
+import { SurvivorsList } from "../../../components/SurvivorsList";
+import { LimitsNotice } from "../../../components/LimitsNotice";
+import { ReencodeConfirmDialog } from "../../../components/ReencodeConfirmDialog";
 import { ArrowLeft, AlertCircle, RefreshCw } from "lucide-react";
 
 export default function JobResultPage() {
@@ -24,6 +25,9 @@ export default function JobResultPage() {
   const [progress, setProgress] = useState<number>(0);
   const [report, setReport] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [showReencodeDialog, setShowReencodeDialog] = useState<boolean>(false);
+  const [isRetrying, setIsRetrying] = useState<boolean>(false);
 
   // SSE Event listener
   useEffect(() => {
@@ -43,7 +47,12 @@ export default function JobResultPage() {
     });
 
     eventSource.addEventListener("completed", async (event) => {
-      setStatus("completed");
+      try {
+        const data = JSON.parse(event.data);
+        setStatus(data.status || "completed");
+      } catch {
+        setStatus("completed");
+      }
       setStage("completed");
       setProgress(100);
       eventSource.close();
@@ -54,9 +63,13 @@ export default function JobResultPage() {
       try {
         // @ts-ignore
         const data = JSON.parse(event.data);
+        const code = data.error?.code || "";
+        setErrorCode(code);
         setError(data.error?.message || "Job processing failed");
+        if (code === "REENCODE_REQUIRED") {
+          setShowReencodeDialog(true);
+        }
       } catch {
-        // Fallback polling if SSE drops
         fetchStatus();
       }
     });
@@ -75,13 +88,18 @@ export default function JobResultPage() {
       if (!res.ok) throw new Error("Job not found");
       const job = await res.json();
       setStatus(job.status);
-      setStage(job.current_stage || "queued");
-      setProgress(job.progress_percent || 0);
+      setStage(job.currentStage || job.current_stage || "queued");
+      setProgress(job.progressPercent || job.progress_percent || 0);
 
-      if (job.status === "completed") {
+      if (job.status === "completed" || job.status === "completed_with_warnings") {
         await fetchReport();
       } else if (job.status === "failed") {
+        const code = job.error?.code || "";
+        setErrorCode(code);
         setError(job.error?.message || "Processing failed");
+        if (code === "REENCODE_REQUIRED") {
+          setShowReencodeDialog(true);
+        }
       }
     } catch (e: any) {
       setError(e.message);
@@ -97,7 +115,7 @@ export default function JobResultPage() {
         const jobRes = await fetch(`/api/v1/jobs/${jobId}`);
         if (jobRes.ok) {
           const job = await jobRes.json();
-          data.download_url = job.download_url || job.downloadUrl;
+          data.downloadUrl = job.downloadUrl || job.download_url;
         }
         setReport(data);
       }
@@ -112,6 +130,33 @@ export default function JobResultPage() {
       router.push("/");
     }
   };
+
+  const handleConfirmReencode = async () => {
+    setIsRetrying(true);
+    setError(null);
+    setShowReencodeDialog(false);
+
+    try {
+      const res = await fetch(`/api/v1/jobs/${jobId}/remove`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowReencode: true }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error?.message || "Re-encoding request failed");
+      }
+      setStatus("queued");
+      setStage("cleaning");
+      setProgress(20);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setIsRetrying(false);
+    }
+  };
+
+  const isCompleted = status === "completed" || status === "completed_with_warnings";
 
   return (
     <div className="flex-1 flex flex-col px-4 py-8 max-w-6xl mx-auto w-full">
@@ -130,30 +175,48 @@ export default function JobResultPage() {
         </span>
       </div>
 
+      {/* Re-encode Confirmation Modal */}
+      <ReencodeConfirmDialog
+        isOpen={showReencodeDialog}
+        onConfirm={handleConfirmReencode}
+        onCancel={() => setShowReencodeDialog(false)}
+        isProcessing={isRetrying}
+      />
+
       {/* Error State */}
-      {error && (
+      {error && !showReencodeDialog && (
         <div className="p-6 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 max-w-2xl mx-auto w-full text-center">
           <AlertCircle className="w-10 h-10 text-red-500 mx-auto mb-3" />
           <h3 className="font-bold text-red-900 dark:text-red-200 text-base">Processing Failed</h3>
           <p className="text-xs text-red-700 dark:text-red-400 mt-1 max-w-md mx-auto">{error}</p>
-          <button
-            onClick={() => router.push("/")}
-            className="mt-4 px-4 py-2 rounded-xl text-xs font-semibold bg-red-600 text-white hover:bg-red-700 transition"
-          >
-            Return to Upload
-          </button>
+          <div className="mt-4 flex items-center justify-center gap-3">
+            {errorCode === "REENCODE_REQUIRED" && (
+              <button
+                onClick={() => setShowReencodeDialog(true)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-teal-600 text-white hover:bg-teal-700 transition"
+              >
+                Authorize Re-encode
+              </button>
+            )}
+            <button
+              onClick={() => router.push("/")}
+              className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-300 transition"
+            >
+              Return to Upload
+            </button>
+          </div>
         </div>
       )}
 
       {/* In-Progress Stepper */}
-      {!error && status !== "completed" && (
+      {!error && !isCompleted && (
         <div className="my-auto py-12">
           <ProgressStepper currentStage={stage} progressPercent={progress} />
         </div>
       )}
 
       {/* Completed State */}
-      {!error && status === "completed" && report && (
+      {!error && isCompleted && report && (
         <div className="flex flex-col gap-8 pb-12">
           {report.method ? (
             /* Remove Mode Completed */

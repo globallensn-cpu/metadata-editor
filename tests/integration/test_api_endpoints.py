@@ -1,13 +1,11 @@
 """Integration tests for FastAPI REST Endpoints."""
 
 from pathlib import Path
-import pytest
+
 from fastapi.testclient import TestClient
 
 from apps.api.src.core.security import sign_download_url
 from apps.api.src.main import app
-from apps.api.src.services.job_service import job_service
-
 
 client = TestClient(app)
 FIXTURE_DIR = Path(__file__).parent.parent / "fixtures"
@@ -59,12 +57,12 @@ def test_full_job_lifecycle_upload_remove_download_delete():
     import time
     for _ in range(20):
         res = client.get(f"/api/v1/jobs/{job_id}")
-        if res.json()["status"] == "completed":
+        if res.json()["status"] in ("completed", "completed_with_warnings"):
             break
         time.sleep(0.2)
 
     job_data = res.json()
-    assert job_data["status"] == "completed"
+    assert job_data["status"] in ("completed", "completed_with_warnings")
     dl_url = job_data.get("download_url") or job_data.get("downloadUrl")
     assert dl_url is not None
 
@@ -74,8 +72,8 @@ def test_full_job_lifecycle_upload_remove_download_delete():
     report = res.json()
     assert report.get("job_id") == job_id or report.get("jobId") == job_id
     assert report["method"] == "remux"
-    assert report["stream_copy"] is True or report.get("streamCopy") is True
-    assert report["playback_verified"] is True or report.get("playbackVerified") is True
+    assert report.get("stream_copy") is True or report.get("streamCopy") is True
+    assert report.get("playback_verified") is True or report.get("playbackVerified") is True
     assert "removed" in report
     assert "counts" in report
 

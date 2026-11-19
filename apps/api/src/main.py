@@ -1,21 +1,24 @@
 """Reaboard FastAPI Application Entrypoint.
 
 Configures CORS, security headers, cleanup background tasks,
-health probes, and API route registration.
+health probes, rate limiting, and API route registration.
 """
 
 from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
 
-from apps.api.src.api.routes import router
+from apps.api.src.api.routes import limiter, router
+from apps.api.src.core.config import settings
+from apps.api.src.schemas.schemas import ErrorCode, ErrorDetail, ErrorEnvelope
 from apps.api.src.services.cleanup_service import CleanupService
-from apps.api.src.services.job_service import job_service
-
+from apps.api.src.services.job_service import InvalidStateTransitionError, job_service
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,19 +42,42 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Reaboard API",
-    version="1.0.0",
+    version="1.1.0",
     description="Privacy-first, lossless-by-default media metadata inspection and sanitization engine.",
     lifespan=lifespan,
 )
 
-# CORS configuration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Restrict in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Connect slowapi limiter state
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    """Handle rate limit breaches with standard error envelope."""
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content=ErrorEnvelope(
+            error=ErrorDetail(
+                code=ErrorCode.RATE_LIMITED,
+                message=f"Rate limit exceeded: {exc.detail}",
+                hint="Please wait before uploading additional files.",
+            )
+        ).model_dump(by_alias=True),
+    )
+
+
+@app.exception_handler(InvalidStateTransitionError)
+async def state_transition_handler(request: Request, exc: InvalidStateTransitionError):
+    """Handle invalid state transitions with 409 Conflict."""
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content=ErrorEnvelope(
+            error=ErrorDetail(
+                code=ErrorCode.INVALID_STATE,
+                message=str(exc),
+            )
+        ).model_dump(by_alias=True),
+    )
 
 
 @app.exception_handler(HTTPException)
@@ -63,6 +89,17 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
         status_code=exc.status_code,
         content={"error": {"code": "HTTP_ERROR", "message": str(exc.detail)}},
     )
+
+
+# CORS configuration
+origins = settings.cors_origins if settings.cors_origins else ["*"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.middleware("http")

@@ -1,6 +1,5 @@
 """Unit tests for Sensitive Field Classifier and Masking."""
 
-import pytest
 from apps.api.src.core.sensitive_fields import classify_tag, mask_sensitive_value
 from apps.api.src.schemas.schemas import SensitivityCategory
 

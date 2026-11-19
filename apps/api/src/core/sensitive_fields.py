@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+
 from apps.api.src.schemas.schemas import SensitivityCategory
 
 
@@ -79,7 +80,7 @@ RULES: list[SensitiveRule] = [
 
 def classify_tag(tag_name: str) -> tuple[bool, SensitivityCategory | None]:
     """Check if a metadata tag matches known sensitive patterns.
-    
+
     Handles namespaced tags (e.g. 'QuickTime:GPSCoordinates', 'EXIF:Model').
     """
     clean_tag = tag_name.split(":")[-1]
