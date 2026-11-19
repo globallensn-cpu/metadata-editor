@@ -1,0 +1,30 @@
+{
+  "brand": "Reaboard",
+  "tagline": "Clean metadata. Keep the quality. Stay private.",
+  "subtitle": "Inspect every hidden metadata atom in your video, image, or document. Losslessly remove sensitive tags with verified before-and-after reporting.",
+  "dropzone": {
+    "title": "Drop your file here, paste from clipboard, or browse",
+    "supported": "Supports MP4, MOV, MKV, WebM, AVI, JPEG, PNG, WebP, HEIC, TIFF, PDF",
+    "sizeLimit": "Max 500 MB • Stored locally in ephemeral memory • Deleted after 60 mins",
+    "selectFile": "Choose File"
+  },
+  "actions": {
+    "remove": "Remove Metadata (Lossless)",
+    "view": "View Metadata",
+    "download": "Download Cleaned File",
+    "deleteNow": "Delete Now",
+    "keepIcc": "Preserve ICC Color Profile",
+    "keepOrientation": "Preserve Visual Orientation"
+  },
+  "stages": {
+    "queued": "Queued in processing engine",
+    "analyzing": "Analyzing container and inspecting atoms",
+    "cleaning": "Executing lossless stream copy remux",
+    "verifying": "Verifying stream packet hashes and diffing tags",
+    "completed": "Verification complete"
+  },
+  "limits": {
+    "title": "What Reaboard Can't Do",
+    "content": "Reaboard does not alter pixels, audio samples, or visible text. It does not remove content watermarks or sensor fingerprints (PRNU). Filename and filesystem creation dates are retained unless randomized."
+  }
+}

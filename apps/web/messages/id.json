@@ -1,0 +1,30 @@
+{
+  "brand": "Reaboard",
+  "tagline": "Bersihkan metadata. Jaga kualitas. Tetap privat.",
+  "subtitle": "Periksa setiap atom metadata tersembunyi dalam video, gambar, atau dokumen Anda. Hapus tag sensitif secara lossless dengan laporan verifikasi transparan.",
+  "dropzone": {
+    "title": "Tarik & lepas berkas di sini, tempel dari papan klip, atau pilih",
+    "supported": "Mendukung MP4, MOV, MKV, WebM, AVI, JPEG, PNG, WebP, HEIC, TIFF, PDF",
+    "sizeLimit": "Maksimal 500 MB • Disimpan di memori efemeral • Dihapus setelah 60 menit",
+    "selectFile": "Pilih Berkas"
+  },
+  "actions": {
+    "remove": "Hapus Metadata (Lossless)",
+    "view": "Lihat Metadata",
+    "download": "Unduh Berkas Bersih",
+    "deleteNow": "Hapus Sekarang",
+    "keepIcc": "Pertahankan Profil Warna ICC",
+    "keepOrientation": "Pertahankan Orientasi Tampilan"
+  },
+  "stages": {
+    "queued": "Dalam antrean pemrosesan",
+    "analyzing": "Menganalisis kontainer dan struktur atom",
+    "cleaning": "Menjalankan remux salinan stream lossless",
+    "verifying": "Memverifikasi hash paket stream dan membandingkan tag",
+    "completed": "Verifikasi selesai"
+  },
+  "limits": {
+    "title": "Batasan Reaboard",
+    "content": "Reaboard tidak mengubah piksel, audio, atau teks yang terlihat. Tidak menghapus tanda air konten atau sidik jari sensor (PRNU). Nama berkas dan tanggal sistem operasi dipertahankan kecuali diacak."
+  }
+}

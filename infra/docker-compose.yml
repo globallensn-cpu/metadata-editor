@@ -1,0 +1,63 @@
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.web
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      - REABOARD_STORAGE_DIR=/tmp/reaboard
+      - REABOARD_SECRET_KEY=reaboard-production-super-secret-key-1984
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ephemeral_storage:/tmp/reaboard
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.worker
+    read_only: true
+    user: "10001:10001"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    network_mode: none
+    environment:
+      - REABOARD_STORAGE_DIR=/tmp/reaboard
+    volumes:
+      - ephemeral_storage:/tmp/reaboard:rw
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=2G
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1024M
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+volumes:
+  ephemeral_storage:

@@ -1,0 +1,129 @@
+openapi: 3.1.0
+info:
+  title: Reaboard API
+  version: 1.0.0
+  description: Production-grade, privacy-first API to inspect and losslessly remove metadata with transparent verification.
+servers:
+  - url: /api/v1
+paths:
+  /jobs:
+    post:
+      summary: Upload file and create job
+      operationId: createJob
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                batch_id:
+                  type: string
+                  format: uuid
+      responses:
+        '201':
+          description: Staged
+  /jobs/{id}:
+    get:
+      summary: Get job status
+      operationId: getJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+    delete:
+      summary: Purge job immediately
+      operationId: deleteJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Purged
+  /jobs/{id}/view:
+    post:
+      summary: Start view inspection
+      operationId: startViewJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Accepted
+  /jobs/{id}/remove:
+    post:
+      summary: Start lossless removal and verification
+      operationId: startRemoveJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Accepted
+  /jobs/{id}/events:
+    get:
+      summary: Server-Sent Events stream
+      operationId: getJobEvents
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SSE stream
+  /jobs/{id}/report:
+    get:
+      summary: Get inspection or removal report
+      operationId: getJobReport
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Report
+  /jobs/{id}/download:
+    get:
+      summary: Download cleaned file
+      operationId: downloadCleanedFile
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: signature
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: expires
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Binary file stream
