@@ -1,24 +1,23 @@
 """Reaboard Video Cleaning Pipeline.
 
 Executes lossless remuxing for MP4, MOV, M4V, MKV, WebM, and AVI containers.
-Strips telemetry, GPS data tracks, chapter markers, container metadata, and handler tags
-while keeping video and audio bit-for-bit lossless via stream copy.
+Normalizes handler names to generic structural names, drops data and telemetry streams,
+and provides CRF-based re-encoding when lossless processing fails and user explicitly permits it.
 """
 
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
-from apps.api.src.schemas.schemas import CleaningMethod, RemovalOptions
 
+from apps.api.src.schemas.schemas import RemovalOptions
+from apps.worker.src.engine.cmd_runner import run_command_secure
 
-# Hard timeout: 300 seconds default
 DEFAULT_COMMAND_TIMEOUT = 300
 
 
 def get_ffmpeg_path() -> str:
-    """Find ffmpeg binary from PATH or common locations."""
+    """Find ffmpeg binary from environment or system path."""
     return os.environ.get("REABOARD_FFMPEG_PATH", "ffmpeg")
 
 
@@ -34,7 +33,7 @@ def clean_video_lossless(
     Returns:
         (success: bool, error_message_or_info: str)
     """
-    opts = options or RemovalOptions()
+    options or RemovalOptions()
     ffmpeg = get_ffmpeg_path()
     norm_type = detected_type.lower()
 
@@ -61,33 +60,69 @@ def clean_video_lossless(
     if norm_type in ("mp4", "mov", "m4v"):
         cmd.extend([
             "-movflags", "+faststart",
+            # Note: FFmpeg normalizes empty handler names to generic structural names
             "-metadata:s:v", "handler_name=",
             "-metadata:s:a", "handler_name=",
             "-metadata:s:s", "handler_name=",
         ])
 
-    # Pass separator before destination
     cmd.extend(["--", str(output_path)])
 
-    try:
-        proc = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=timeout,
-            shell=False,
-        )
-        if proc.returncode != 0:
-            err = proc.stderr.strip()[-500:] if proc.stderr else "Unknown FFmpeg error"
-            return False, f"FFmpeg remux failed with code {proc.returncode}: {err}"
-
-        if not output_path.exists() or output_path.stat().st_size == 0:
-            return False, "FFmpeg completed but output file is missing or empty"
-
-        return True, "Lossless remux completed successfully"
-
-    except subprocess.TimeoutExpired:
+    res = run_command_secure(cmd, timeout_seconds=timeout)
+    if res.timed_out:
         return False, f"Remux operation timed out after {timeout} seconds"
-    except Exception as e:
-        return False, f"Unexpected error executing FFmpeg: {str(e)}"
+
+    if res.returncode != 0:
+        err = res.stderr.strip()[-500:] if res.stderr else "Unknown FFmpeg error"
+        return False, f"FFmpeg remux failed with code {res.returncode}: {err}"
+
+    if not output_path.exists() or output_path.stat().st_size == 0:
+        return False, "FFmpeg completed but output file is missing or zero-byte"
+
+    return True, "Lossless remux completed successfully"
+
+
+def reencode_video_fallback(
+    input_path: Path,
+    output_path: Path,
+    format_hint: str = "mp4",
+    options: RemovalOptions | None = None,
+    timeout: int = DEFAULT_COMMAND_TIMEOUT,
+) -> tuple[bool, str]:
+    """Re-encode video with visually transparent CRF 18 settings when remuxing is impossible."""
+    ffmpeg = get_ffmpeg_path()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        ffmpeg,
+        "-hide_banner",
+        "-nostdin",
+        "-y",
+        "-i", str(input_path),
+        "-map_metadata", "-1",
+        "-map_chapters", "-1",
+        "-c:v", "libx264",
+        "-crf", "18",
+        "-preset", "veryfast",
+        "-c:a", "copy",
+        "-movflags", "+faststart",
+        "--",
+        str(output_path),
+    ]
+
+    res = run_command_secure(cmd, timeout_seconds=timeout)
+    if res.timed_out:
+        return False, f"Re-encode timed out after {timeout} seconds"
+
+    if res.returncode != 0:
+        err = res.stderr.strip()[-500:] if res.stderr else "Re-encode failed"
+        return False, f"FFmpeg re-encode failed: {err}"
+
+    if not output_path.exists() or output_path.stat().st_size == 0:
+        return False, "Re-encode completed but output is empty"
+
+    return True, "Re-encode fallback completed successfully"
+
+
+# Alias for unified pipeline naming
+clean_video_reencode = reencode_video_fallback

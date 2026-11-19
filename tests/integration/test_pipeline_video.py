@@ -1,7 +1,7 @@
 """Integration test for Video Remuxing Pipeline (Lossless Verification)."""
 
 from pathlib import Path
-import pytest
+
 from apps.api.src.schemas.schemas import RemovalOptions
 from apps.worker.src.engine.pipelines.video import clean_video_lossless
 from apps.worker.src.engine.verify import (
@@ -9,7 +9,6 @@ from apps.worker.src.engine.verify import (
     extract_unified_metadata,
     verify_playback,
 )
-
 
 FIXTURE_DIR = Path(__file__).parent.parent / "fixtures"
 INPUT_MP4 = FIXTURE_DIR / "sample_gps.mp4"

@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
 from pathlib import Path
-from apps.api.src.schemas.schemas import RemovalOptions
 
+from apps.api.src.schemas.schemas import RemovalOptions
+from apps.worker.src.engine.cmd_runner import run_command_secure
 
 DEFAULT_COMMAND_TIMEOUT = 120
 
@@ -22,11 +22,16 @@ def get_exiftool_cmd() -> list[str]:
     if env_tool:
         return [env_tool]
 
-    # Check for local windows portable exiftool
-    local_perl = Path("D:/code metadata/tools/bin/exiftool_files/perl.exe")
-    local_pl = Path("D:/code metadata/tools/bin/exiftool_files/exiftool.pl")
-    if local_perl.exists() and local_pl.exists():
-        return [str(local_perl), str(local_pl)]
+    # Check for local portable perl/exiftool.pl if available
+    tools_dir = Path(__file__).resolve().parents[5] / "tools" / "bin" / "exiftool_files"
+    perl_exe = tools_dir / "perl.exe"
+    exiftool_pl = tools_dir / "exiftool.pl"
+    if perl_exe.exists() and exiftool_pl.exists():
+        return [str(perl_exe), str(exiftool_pl)]
+
+    which = shutil.which("exiftool")
+    if which:
+        return [which]
 
     return ["exiftool"]
 
@@ -38,7 +43,7 @@ def clean_image(
     options: RemovalOptions | None = None,
     timeout: int = DEFAULT_COMMAND_TIMEOUT,
 ) -> tuple[bool, str]:
-    """Strip image metadata on a fresh copy of the input file.
+    """Strip image metadata on an isolated copy of the input file.
 
     Returns:
         (success: bool, error_message_or_info: str)
@@ -47,13 +52,12 @@ def clean_image(
     exiftool = get_exiftool_cmd()
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    # Never modify input in place: copy original first
     shutil.copyfile(input_path, output_path)
 
     cmd = list(exiftool) + [
         "-all=",
         "-overwrite_original",
-        "-P",  # Preserve file modification date/time if needed by filesystem
+        "-P",
     ]
 
     # Re-apply structural tags if configured
@@ -64,26 +68,15 @@ def clean_image(
 
     cmd.extend(["--", str(output_path)])
 
-    try:
-        proc = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=timeout,
-            shell=False,
-        )
-
-        if proc.returncode != 0:
-            err = proc.stderr.strip()[-500:] if proc.stderr else proc.stdout.strip()[-500:]
-            return False, f"ExifTool strip failed with code {proc.returncode}: {err}"
-
-        if not output_path.exists() or output_path.stat().st_size == 0:
-            return False, "ExifTool completed but output file is missing or zero-byte"
-
-        return True, "Image metadata sanitized successfully"
-
-    except subprocess.TimeoutExpired:
+    res = run_command_secure(cmd, timeout_seconds=timeout)
+    if res.timed_out:
         return False, f"ExifTool operation timed out after {timeout} seconds"
-    except Exception as e:
-        return False, f"Unexpected error executing ExifTool: {str(e)}"
+
+    if res.returncode != 0:
+        err = res.stderr.strip()[-500:] if res.stderr else res.stdout.strip()[-500:]
+        return False, f"ExifTool strip failed with code {res.returncode}: {err}"
+
+    if not output_path.exists() or output_path.stat().st_size == 0:
+        return False, "ExifTool completed but output file is missing or zero-byte"
+
+    return True, "Image metadata sanitized successfully"

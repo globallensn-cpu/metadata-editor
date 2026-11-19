@@ -1,7 +1,7 @@
 """Reaboard Strategy Selector.
 
 Selects the appropriate cleaning pipeline based on magic-byte verified file types.
-Enforces the lossless-by-default mandate.
+Enforces the lossless-by-default mandate and requires explicit confirmation for re-encoding.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from apps.api.src.schemas.schemas import CleaningMethod, RemovalOptions
 
 class StrategySelectionError(Exception):
     """Raised when no lossless strategy can be selected without re-encoding permission."""
+
     def __init__(self, message: str, requires_reencode: bool = False):
         super().__init__(message)
         self.requires_reencode = requires_reencode
@@ -32,7 +33,7 @@ def select_cleaning_strategy(
     if norm_type in ("mp4", "mov", "m4v"):
         return (
             CleaningMethod.REMUX,
-            "Lossless stream copy remuxing with bitexact flags, telemetry stream dropping, and handler blanking.",
+            "Lossless stream copy remuxing with bitexact flags, telemetry stream dropping, and handler normalization.",
         )
 
     if norm_type in ("mkv", "webm"):
@@ -48,7 +49,7 @@ def select_cleaning_strategy(
         )
 
     # Images (Atomic ExifTool Sanitization)
-    if norm_type in ("jpeg", "jpg", "png", "webp", "heic", "heif", "tiff"):
+    if norm_type in ("jpeg", "jpg", "png", "webp", "heic", "heif", "tiff", "avif"):
         features = []
         if opts.keep_icc_profile:
             features.append("ICC profile preserved")
@@ -71,7 +72,7 @@ def select_cleaning_strategy(
     if norm_type in ("docx", "xlsx", "pptx"):
         return (
             CleaningMethod.OFFICE_REPACK,
-            "ZIP package XML sanitization (docProps core/app/custom) and deterministic repack.",
+            "ZIP package XML sanitization (docProps core/app/custom, rsid tracking) and deterministic repack.",
         )
 
     # Audio Containers
@@ -85,7 +86,7 @@ def select_cleaning_strategy(
     if opts.allow_reencode:
         return (
             CleaningMethod.REENCODE,
-            "Transcoding fallback via visually transparent CRF encoding (user permitted).",
+            "Transcoding fallback via visually transparent CRF 18 encoding (user permitted).",
         )
 
     raise StrategySelectionError(
