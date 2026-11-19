@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useState } from "react";
-import { Check, X, ShieldAlert, Sparkles } from "lucide-react";
+import { X, Sparkles } from "lucide-react";
 
 interface RemovedField {
   group: string;
   tag: string;
-  value_preview: string;
+  valuePreview?: string;
+  value_preview?: string;
   category?: string;
 }
 
@@ -17,12 +18,16 @@ interface DiffViewProps {
 export function DiffView({ removed }: DiffViewProps) {
   const [filter, setFilter] = useState("");
 
-  const filtered = removed.filter(
-    (r) =>
+  const getPreview = (r: RemovedField) => r.valuePreview ?? r.value_preview ?? "";
+
+  const filtered = removed.filter((r) => {
+    const preview = getPreview(r);
+    return (
       r.tag.toLowerCase().includes(filter.toLowerCase()) ||
       r.group.toLowerCase().includes(filter.toLowerCase()) ||
-      r.value_preview.toLowerCase().includes(filter.toLowerCase())
-  );
+      preview.toLowerCase().includes(filter.toLowerCase())
+    );
+  });
 
   return (
     <div className="w-full max-w-4xl mx-auto rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-sm">
@@ -67,7 +72,7 @@ export function DiffView({ removed }: DiffViewProps) {
               </div>
 
               <span className="font-mono text-slate-400 dark:text-slate-500 truncate max-w-sm line-through text-right">
-                {r.value_preview}
+                {getPreview(r)}
               </span>
             </div>
           ))}

@@ -6,9 +6,11 @@ import { Info, AlertTriangle, ShieldCheck, HelpCircle } from "lucide-react";
 interface SurvivorField {
   group: string;
   tag: string;
-  survivor_class: "structural" | "identifying" | "unknown";
+  survivorClass?: "structural" | "identifying" | "unknown";
+  survivor_class?: "structural" | "identifying" | "unknown";
   class?: "structural" | "identifying" | "unknown";
-  value_preview: string;
+  valuePreview?: string;
+  value_preview?: string;
   reason: string;
 }
 
@@ -19,11 +21,14 @@ interface SurvivorsListProps {
 export function SurvivorsList({ survivors }: SurvivorsListProps) {
   const [tab, setTab] = useState<"structural" | "identifying" | "all">("all");
 
-  const getSurvivorClass = (s: SurvivorField) => s.survivor_class || s.class || "unknown";
+  const getSurvivorClass = (s: SurvivorField) =>
+    s.survivorClass || s.survivor_class || s.class || "unknown";
+
+  const getValuePreview = (s: SurvivorField) =>
+    s.valuePreview || s.value_preview || "";
 
   const structuralList = survivors.filter((s) => getSurvivorClass(s) === "structural");
   const identifyingList = survivors.filter((s) => getSurvivorClass(s) === "identifying");
-  const unknownList = survivors.filter((s) => getSurvivorClass(s) === "unknown");
 
   const activeList =
     tab === "structural" ? structuralList : tab === "identifying" ? identifyingList : survivors;
@@ -82,6 +87,7 @@ export function SurvivorsList({ survivors }: SurvivorsListProps) {
         <div className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
           {activeList.map((s, i) => {
             const sClass = getSurvivorClass(s);
+            const valPrev = getValuePreview(s);
             const isStructural = sClass === "structural";
             const isIdentifying = sClass === "identifying";
 
@@ -110,7 +116,7 @@ export function SurvivorsList({ survivors }: SurvivorsListProps) {
                 </div>
 
                 <div className="flex flex-col sm:items-end text-slate-500 text-[11px] truncate">
-                  <span className="font-mono text-slate-700 dark:text-slate-300 truncate max-w-xs">{s.value_preview}</span>
+                  <span className="font-mono text-slate-700 dark:text-slate-300 truncate max-w-xs">{valPrev}</span>
                   <span className="text-[10px] text-slate-400 mt-0.5 italic">{s.reason}</span>
                 </div>
               </div>
